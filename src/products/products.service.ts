@@ -2,10 +2,11 @@ import { BadRequestException, Injectable, InternalServerErrorException, Logger, 
 import { CreateProductDto } from "./dto/create-product.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import { Product } from "./entities/product.entity";
 import { PaginationDto } from "src/common/dtos/pagination.dto";
 import * as uuid from "uuid";
+import { ProductImages } from "./entities";
 
 @Injectable()
 export class ProductsService {
@@ -13,14 +14,20 @@ export class ProductsService {
   constructor(
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductImages)
+    private readonly productImagesRepository: Repository<ProductImages>,
+
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(createProductDto: CreateProductDto) {
     try {
-      const product = this.productRepository.create(createProductDto);
+      const { images = [], ...productsDetails } = createProductDto;
+
+      const product = this.productRepository.create({ ...productsDetails, images: images.map(url => this.productImagesRepository.create({ url: [url] })) });
       await this.productRepository.save(product);
 
-      return product;
+      return { ...product, images };
     } catch (error) {
       this.handleDbException(error);
     }
@@ -32,6 +39,9 @@ export class ProductsService {
     const product = await this.productRepository.find({
       skip: offset,
       take: limit,
+      relations: {
+        images: true,
+      },
     });
 
     return product;
@@ -45,10 +55,13 @@ export class ProductsService {
     } else {
       // product = await this.productRepository.findOneBy({ slug: id }); Si se quisiera buscar por slug o cualquier otro campo
 
-      const queryBuilder = this.productRepository.createQueryBuilder();
+      const queryBuilder = this.productRepository.createQueryBuilder("prod");
       // ILIKE es un operador de comparación que actúa como =, pero no distingue entre mayúsculas y minúsculas.
       // % es un comodín que representa cero o más caracteres. Además, se utiliza para buscar cualquier cadena que contenga el valor especificado.
-      product = await queryBuilder.where("title ILIKE :title or slug ILIKE :slug", { title: `%${id}%`, slug: `%${id}%` }).getOne();
+      product = await queryBuilder
+        .where("title ILIKE :title or slug ILIKE :slug", { title: `%${id}%`, slug: `%${id}%` })
+        .leftJoinAndSelect("prod.images", "prodImages")
+        .getOne();
 
       return product;
     }
@@ -58,18 +71,53 @@ export class ProductsService {
     return product;
   }
 
+  // Este método es similar al anterior, pero en lugar de devolver la entidad completa, devuelve solo los campos que se le indiquen.
+  // Es decir, no devolverá el id de la imagen, sino solo la url.
+  // Si por alguna razón se necesita devolver el objeto completo, se puede hacer con el método findOne.
+  async findOnePlain(id: string) {
+    const { images = [], ...rest } = await this.findOne(id);
+
+    return { ...rest, images: images.map(({ url }) => url) };
+  }
+
   async update(id: string, updateProductDto: UpdateProductDto) {
+    const { images, ...toUpdate } = updateProductDto;
+
     const product = await this.productRepository.preload({
       id,
-      ...updateProductDto,
+      ...toUpdate,
     });
 
     if (!product) throw new NotFoundException(`Producto no encontrado con el id ${id}`);
 
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
     try {
-      await this.productRepository.save(product);
-      return product;
+      // Con este if borramos las imágenes anteriores ya sea porque se quieren actualizar o porque se quieren eliminar.
+      if (images) {
+        await queryRunner.manager.delete(ProductImages, { product: { id } });
+
+        // Acá se crean las nuevas imágenes, si es que se enviaron. Todavía no se guardan en la base de datos.
+        product.images = images.map(url => this.productImagesRepository.create({ url: [url] }));
+      }
+
+      await queryRunner.manager.save(product);
+
+      // await this.productRepository.save(product);
+
+      // Realizamos el commit de la transacción, es decir, guardamos los cambios en la base de datos.
+      await queryRunner.commitTransaction();
+
+      // Liberamos el queryRunner para que pueda ser utilizado por otros servicios.
+      await queryRunner.release();
+      return this.findOne(id);
     } catch (error) {
+      // Si ocurre un error, hacemos un rollback de la transacción, es decir, deshacemos los cambios realizados.
+      await queryRunner.rollbackTransaction();
+      await queryRunner.release();
       this.handleDbException(error);
     }
   }
@@ -97,5 +145,17 @@ export class ProductsService {
     console.log(error);
     this.logger.error(error);
     throw new InternalServerErrorException("Error inesperado - Revisar los logs");
+  }
+
+  async deleteAllProducts() {
+    const query = this.productRepository.createQueryBuilder("product");
+
+    try {
+      // Se puede utilizar el método delete de TypeORM para eliminar todas las entidades de una tabla.
+      // El método delete no requiere un where, pero se puede agregar uno si se desea eliminar solo un subconjunto de entidades.
+      return await query.delete().where({}).execute();
+    } catch (error) {
+      this.handleDbException(error);
+    }
   }
 }
