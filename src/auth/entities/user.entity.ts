@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
+import { BeforeInsert, BeforeUpdate, Column, Entity, PrimaryGeneratedColumn } from "typeorm";
 
 @Entity("users")
 export class User {
@@ -8,7 +8,10 @@ export class User {
   @Column("text", { unique: true })
   email: string;
 
-  @Column("text")
+  @Column(
+    "text",
+    { select: false }, // no queremos que se seleccione por defecto en las consultas
+  )
   password: string;
 
   @Column("text")
@@ -22,4 +25,10 @@ export class User {
     default: ["user"],
   })
   roles: string[]; // roles del usuario, por ejemplo: ['admin', 'customer']
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  emailToLowerCase() {
+    this.email = this.email.toLowerCase();
+  }
 }
