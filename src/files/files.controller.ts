@@ -15,7 +15,7 @@ export class FilesController {
 
   // Al usar el decorador @Res nest deja de tener control sobre la respuesta y se debe retornar un valor
   // Es decir, nosotros en lugar del return path; debemos retornar res
-  @Get("products/:imagename")
+  @Get("product/:imagename")
   findProductImage(@Res() res: Response, @Param("imagename") imageName: string) {
     console.log({ imageName });
     const path = this.filesService.getImage(imageName);
@@ -29,6 +29,11 @@ export class FilesController {
       limits: {
         fileSize: 1024 * 1024 * 2, // 2MB
       },
+      /* Esto sirve para enviar archivos estáticos, es decir, si en algún momento necesitamos servir alguna imágen que siempre será la misma, se podría utilizar este método
+      Por otro lado, no tenemos control sobre quién puede acceder a la imagen, por lo que no es recomendable utilizarlo para archivos sensibles
+      En el path http://localhost:3000/api/files/product/1473809-00-A_1_2000.jpg se puede acceder a la imagen, pero no se puede controlar quién puede acceder a ella
+      se tiene que agregar el prefijo files en el path para que funcione
+      */
       storage: diskStorage({ destination: "./static/products", filename: fileNamer }),
     }),
   )
