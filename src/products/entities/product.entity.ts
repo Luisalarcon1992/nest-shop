@@ -4,8 +4,9 @@ Para crear una entidad se debe usar el decorador @Entity y se debe pasar un obje
 
 */
 
-import { BeforeInsert, BeforeUpdate, Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { BeforeInsert, BeforeUpdate, Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { ProductImages } from "./";
+import { User } from "src/auth/entities/user.entity";
 
 @Entity({
   name: "products",
@@ -54,6 +55,9 @@ export class Product {
 
   @OneToMany(() => ProductImages, productImages => productImages.product, { cascade: true, eager: true })
   images?: ProductImages[];
+
+  @ManyToOne(() => User, user => user.product, { eager: true })
+  user: User;
 
   @BeforeInsert()
   checkSlug() {

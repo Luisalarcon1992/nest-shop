@@ -7,6 +7,7 @@ import { Product } from "./entities/product.entity";
 import { PaginationDto } from "src/common/dtos/pagination.dto";
 import * as uuid from "uuid";
 import { ProductImages } from "./entities";
+import { User } from "src/auth/entities/user.entity";
 
 @Injectable()
 export class ProductsService {
@@ -20,14 +21,14 @@ export class ProductsService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async create(createProductDto: CreateProductDto) {
+  async create(createProductDto: CreateProductDto, user: User) {
     try {
       const { images = [], ...productsDetails } = createProductDto;
 
       const product = this.productRepository.create({ ...productsDetails, images: images.map(url => this.productImagesRepository.create({ url: [url] })) });
       await this.productRepository.save(product);
 
-      return { ...product, images };
+      return { ...product, user, images };
     } catch (error) {
       this.handleDbException(error);
     }
@@ -80,7 +81,7 @@ export class ProductsService {
     return { ...rest, images: images.map(({ url }) => url) };
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto) {
+  async update(id: string, updateProductDto: UpdateProductDto, user: User) {
     const { images, ...toUpdate } = updateProductDto;
 
     const product = await this.productRepository.preload({
@@ -103,6 +104,8 @@ export class ProductsService {
         // Acá se crean las nuevas imágenes, si es que se enviaron. Todavía no se guardan en la base de datos.
         product.images = images.map(url => this.productImagesRepository.create({ url: [url] }));
       }
+
+      product.user = user;
 
       await queryRunner.manager.save(product);
 
