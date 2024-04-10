@@ -5,7 +5,12 @@ import { diskStorage } from "multer";
 import { fileNamer } from "./helpers/fileNamer.helper";
 import { Response } from "express";
 import { ConfigService } from "@nestjs/config";
+import { ApiTags } from "@nestjs/swagger";
+import { Auth } from "src/auth/decorators";
+import { ValidRoles } from "src/auth/interfaces/valid-roles";
+import { FileResponseGet, FileResponsePost } from "./decorators/file-response.decorator";
 
+@ApiTags("Files")
 @Controller("files")
 export class FilesController {
   constructor(
@@ -16,6 +21,7 @@ export class FilesController {
   // Al usar el decorador @Res nest deja de tener control sobre la respuesta y se debe retornar un valor
   // Es decir, nosotros en lugar del return path; debemos retornar res
   @Get("product/:imagename")
+  @FileResponseGet()
   findProductImage(@Res() res: Response, @Param("imagename") imageName: string) {
     console.log({ imageName });
     const path = this.filesService.getImage(imageName);
@@ -24,6 +30,7 @@ export class FilesController {
   }
 
   @Post()
+  @Auth(ValidRoles.admin, ValidRoles.user)
   @UseInterceptors(
     FileInterceptor("file", {
       limits: {
@@ -37,6 +44,7 @@ export class FilesController {
       storage: diskStorage({ destination: "./static/products", filename: fileNamer }),
     }),
   )
+  @FileResponsePost()
   async uploadFile(
     @UploadedFile(
       new ParseFilePipe({
